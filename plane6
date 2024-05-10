@@ -1,0 +1,700 @@
+#include <iostream>
+#include <graphics.h>
+#include <vector>
+#include <conio.h>
+using namespace std;
+
+constexpr auto swidth = 923;
+constexpr auto sheight = 800;
+
+constexpr unsigned int SHP = 4;
+
+//伤害冷却
+constexpr auto hurttime = 1000;
+
+//********神之一手————牛的一批的贴图透明化********
+#pragma comment (lib,"MSIMG32.LIB")
+
+inline void putimage_alpha(int x, int y, IMAGE* img) {
+	int w = img->getwidth();
+	int h = img->getheight();
+	AlphaBlend(GetImageHDC(NULL), x, y, w, h,
+		GetImageHDC(img), 0, 0, w, h, { AC_SRC_OVER,0,255,AC_SRC_ALPHA });
+}
+
+bool PointInRect(int x, int y, RECT& r)
+{
+	return (r.left <= x && x <= r.right && r.top <= y && y <= r.bottom);
+}
+
+bool pengzhuang(RECT& r1, RECT& r2)
+{
+	RECT r;
+	r.left = r1.left - (r2.right - r2.left);
+	r.right = r1.right;
+	r.top = r1.top - (r2.bottom - r2.top);
+	r.bottom = r1.bottom;
+
+	return (r.left < r2.left && r2.left <= r.right && r.top <= r2.top && r2.top <= r.bottom);
+}
+
+int kaishi()
+{	
+	IMAGE cover; 
+	loadimage(&cover, _T("D:\\visualstudio\\project\\C++work\\images\\beijing1.png"));
+	
+	LPCTSTR title = _T("飞机大战(元气版)");
+	LPCTSTR jingdian = _T("经典模式");
+	LPCTSTR wujin = _T("无尽模式");
+	LPCTSTR tuichu = _T("退出游戏");
+	//标题输出
+	RECT jingdianr, wujinr, tuichur;
+	BeginBatchDraw();
+	setbkcolor(BLACK);
+	cleardevice();
+	putimage_alpha(0, 0, &cover);
+
+	LOGFONT fontStyle;
+	gettextstyle(&fontStyle);
+	fontStyle.lfQuality = ANTIALIASED_QUALITY;
+	settextstyle(&fontStyle);
+
+	settextstyle(55, 0, _T("隶书"));
+	settextcolor(WHITE);
+	
+	//又是牛的一批的代码——输出的文字背景透明（必须放在输出函数之前）
+	setbkmode(TRANSPARENT);
+
+	outtextxy(swidth / 2 - textwidth(title) / 2, sheight / 3.5, title);
+	
+	settextstyle(40, 0, _T("微软雅黑"));
+	jingdianr.left = swidth / 2 - textwidth(jingdian) / 2;
+	jingdianr.right = jingdianr.left + textwidth(jingdian);
+	jingdianr.top = sheight / 5 * 2.5;
+	jingdianr.bottom = jingdianr.top + textheight(jingdian);
+
+	settextstyle(40, 0, _T("微软雅黑"));
+	wujinr.left = swidth / 2 - textwidth(wujin) / 2;
+	wujinr.right = wujinr.left + textwidth(wujin);
+	wujinr.top = sheight / 5 * 3;
+	wujinr.bottom = wujinr.top + textheight(wujin);
+
+	tuichur.left = swidth / 2 - textwidth(tuichu) / 2;
+	tuichur.right = tuichur.left + textwidth(tuichu);
+	tuichur.top = sheight / 5 * 3.5;
+	tuichur.bottom = tuichur.top + textheight(tuichu);
+
+	outtextxy(jingdianr.left, jingdianr.top, jingdian);
+	outtextxy(wujinr.left, wujinr.top, wujin);
+	outtextxy(tuichur.left, tuichur.top, tuichu);
+	
+	EndBatchDraw();
+
+	while (true)
+	{
+		ExMessage mess;
+		getmessage(&mess, EM_MOUSE);
+		if (mess.lbutton)
+		{
+			if (PointInRect(mess.x, mess.y, jingdianr))
+			{
+				return 1;
+			}
+			else if (PointInRect(mess.x, mess.y, wujinr)) {
+				return 2;
+			}
+			else if (PointInRect(mess.x, mess.y, tuichur))
+			{
+				exit(0);
+			}
+		}
+	}
+}
+
+void Over(unsigned long long& kill)
+{
+	printf_s("o");
+	TCHAR* str = new TCHAR[250];
+	_stprintf_s(str, 250, _T("击杀数：%llu"), kill);
+	
+	settextcolor(RGB(255,234,98));
+	settextstyle(70, 0, _T("微软雅黑"));
+	outtextxy(swidth / 2 - textwidth(str) / 2, sheight / 5, str);
+
+
+	// 键盘事件 （按Enter返回）
+	LPCTSTR fanhui = _T("按Enter返回");
+	settextstyle(30, 0, _T("微软雅黑"));
+	outtextxy(swidth - textwidth(fanhui), sheight - textheight(fanhui), fanhui);
+
+	while (true)
+	{
+		ExMessage mess;
+		getmessage(&mess, EM_KEY);
+		if (mess.vkcode == 0x0D)
+		{
+			return;
+		}
+	}
+}
+
+
+// 背景、敌机、英雄、子弹
+
+class BK
+{
+public:
+	BK(IMAGE& img)
+		:img(img), y(-sheight)
+	{
+
+	}
+	void Show()
+	{
+		if (y == 0) { y = -sheight; }
+		y += 4;
+		putimage_alpha(0, y, &img);
+	}
+
+private:
+	IMAGE& img;
+	int y;
+
+};
+
+class Hero
+{
+public:
+	Hero(IMAGE &img)
+		:img(img), HP(SHP)
+	{
+		rect.left = swidth / 2 - img.getwidth() / 2;
+		rect.top = sheight - img.getheight();
+		rect.right = rect.left + img.getwidth();
+		rect.bottom = sheight;
+	}
+	void Show()
+	{
+		setlinecolor(RED);
+		setlinestyle(PS_SOLID, 4);
+		putimage_alpha(rect.left, rect.top, &img);
+
+		
+		line(rect.left, rect.top - 5, rect.left + (img.getwidth() / SHP * HP), rect.top - 5);
+	}
+	void Control()
+	{
+		ExMessage mess;
+		if (peekmessage(&mess, EM_MOUSE))
+		{
+			rect.left = mess.x - img.getwidth() / 2;
+			rect.top = mess.y - img.getheight() / 2;
+			rect.right = rect.right = rect.left + img.getwidth();
+			rect.bottom = rect.top + img.getheight();
+		}
+	}
+
+	unsigned int hping = HP;
+
+	bool hurt()
+	{
+		HP--;
+		return (HP == 0) ? false : true;
+	}
+
+	void hp0() {
+		HP = 0;
+	}
+
+	RECT& GetRect() { return rect; }
+
+private:
+	IMAGE& img;
+	RECT rect;
+
+	unsigned int HP;
+
+};
+
+class Enemy
+{
+public:
+	Enemy(IMAGE& img, int x, IMAGE*& boom)
+		 :img(img), isdie(false), boomsum(0)
+	{
+		selfboom[0] = boom[0];
+		selfboom[1] = boom[1];
+		selfboom[2] = boom[2];
+		rect.left = x;
+		rect.right = rect.left + img.getwidth();
+		rect.top = -img.getheight();
+		rect.bottom = 0;
+	}
+	bool Show()
+	{
+
+		if (isdie)
+		{
+			if (boomsum == 3)
+			{
+				return false;
+			}
+			putimage_alpha(rect.left, rect.top, selfboom + boomsum);
+			boomsum++;
+
+			return true;
+		}
+
+		if (rect.top >= sheight)
+		{
+			return false;
+		}
+		rect.top += 4;
+		rect.bottom += 4;
+		putimage_alpha(rect.left, rect.top, &img);
+
+		return true;
+	}
+
+	void Isdie()
+	{
+		isdie = true;
+	}
+
+	RECT& GetRect() { return rect; }
+
+private:
+	IMAGE& img;
+	RECT rect;
+	IMAGE selfboom[3];
+
+	bool isdie;
+	int boomsum;
+};
+
+class Bullet
+{
+public:
+	Bullet(IMAGE& img, RECT pr)
+		:img(img)
+	{
+		rect.left = pr.left + (pr.right - pr.left) / 2 - img.getwidth() / 2;
+		rect.right = rect.left + img.getwidth();
+		rect.top = pr.top - img.getheight();
+		rect.bottom = rect.top + img.getheight();
+	}
+	bool Show()
+	{
+		if (rect.bottom <= 0)
+		{
+			return false;
+		}
+		rect.top -= 3;
+		rect.bottom -= 3;
+		putimage_alpha(rect.left, rect.top, &img);
+
+		return true;
+	}
+	RECT& GetRect() { return rect; }
+
+protected:
+	IMAGE& img;
+	RECT rect;
+};
+
+class EBullet : public Bullet
+{
+public:
+	EBullet(IMAGE& img, RECT pr)
+		:Bullet(img, pr)
+	{
+		rect.left = pr.left + (pr.right - pr.left) / 2 - img.getwidth() / 2;
+		rect.right = rect.left + img.getwidth();
+		rect.top = pr.bottom;
+		rect.bottom = rect.top + img.getheight();
+	}
+	bool Show()
+	{
+		if (rect.top >= sheight)
+		{
+			return false;
+		}
+		rect.top += 5;
+		rect.bottom += 5;
+		putimage_alpha(rect.left, rect.top, &img);
+
+		return true;
+	}
+};
+
+
+bool AddEnemy(vector<Enemy*>& es, IMAGE& enemyimg, IMAGE* boom)
+{
+	Enemy* e = new Enemy(enemyimg, abs(rand()) % (swidth - enemyimg.getwidth()), boom);
+	for (auto& i : es)
+	{
+		if (pengzhuang(i->GetRect(), e->GetRect()))
+		{
+			delete e;
+			return false;
+		}
+	}
+	es.push_back(e);
+	return true;
+
+}
+
+bool Play1()
+{
+	setbkcolor(WHITE);
+	cleardevice();
+	bool xxx = true;
+
+	IMAGE heroimg, enemyimg, bkimg, bulletimg, ebulletimg;
+	IMAGE eboom[3];
+
+	loadimage(&heroimg, _T("D:\\visualstudio\\project\\C++work\\images\\原皮带枪.png"));
+	loadimage(&enemyimg, _T("D:\\visualstudio\\project\\C++work\\images\\蟹4.png"));
+	loadimage(&bkimg, _T("D:\\visualstudio\\project\\C++work\\images\\地图2.png"), swidth, sheight * 2);
+	loadimage(&bulletimg, _T("D:\\visualstudio\\project\\C++work\\images\\子弹.png"));
+	loadimage(&ebulletimg, _T("D:\\visualstudio\\project\\C++work\\images\\红色子弹.png"));
+
+	loadimage(&eboom[0], _T("D:\\visualstudio\\project\\C++work\\images\\爆炸1.png"));
+	loadimage(&eboom[1], _T("D:\\visualstudio\\project\\C++work\\images\\爆炸2.png"));
+	loadimage(&eboom[2], _T("D:\\visualstudio\\project\\C++work\\images\\爆炸3.png"));
+
+	BK bk = BK(bkimg);
+	Hero hp = Hero(heroimg);
+
+	vector<Enemy*> es;
+	vector<Bullet*> bs;
+	vector<EBullet*> ebs;
+	int bsing = 0;
+
+	clock_t hurtlast = clock();
+
+	unsigned long long kill = 0;
+
+	for (int i = 0; i < 5; i++)
+	{
+		AddEnemy(es, enemyimg, eboom);
+	}
+
+	while (xxx)
+	{
+		bsing++;
+		if (bsing % 5 == 0)
+		{
+			bs.push_back(new Bullet(bulletimg, hp.GetRect()));
+		}
+		if (bsing == 40)
+		{
+			bsing = 0;
+			for (auto& i : es)
+			{
+				ebs.push_back(new EBullet(ebulletimg, i->GetRect()));
+			}
+		}
+
+		BeginBatchDraw();
+
+		bk.Show();
+		Sleep(2);
+		flushmessage();
+		Sleep(2);
+		hp.Control();
+
+		if (_kbhit())
+		{
+			char v = _getch();
+			if (v == 0x20)
+			{
+				Sleep(500);
+				while (true)
+				{
+					if (_kbhit())
+					{
+						v = _getch();
+						if (v == 0x20)
+						{
+							break;
+						}
+					}
+					Sleep(16);
+				}
+			}
+		}
+		hp.Show();
+
+		auto bsit = bs.begin();
+		while (bsit != bs.end())
+		{
+			if (!(*bsit)->Show())
+			{
+				bsit = bs.erase(bsit);
+			}
+			else
+			{
+				bsit++;
+			}
+		}
+
+		auto ebsit = ebs.begin();
+		while (ebsit != ebs.end())
+		{
+			if (!(*ebsit)->Show())
+			{
+				ebsit = ebs.erase(ebsit);
+			}
+			else
+			{
+				if (pengzhuang((*ebsit)->GetRect(), hp.GetRect()))
+				{
+					if (clock() - hurtlast >= hurttime)
+					{
+						xxx = hp.hurt();
+						hurtlast = clock();
+					}
+				}
+				ebsit++;
+			}
+
+		}
+
+		auto it = es.begin();
+		while (it != es.end())
+		{
+			if (pengzhuang((*it)->GetRect(), hp.GetRect()))
+			{
+				if (clock() - hurtlast >= hurttime)
+				{
+					xxx = hp.hurt();
+					hurtlast = clock();
+				}
+			}
+			auto bit = bs.begin();
+			while (bit != bs.end())
+			{
+				if (pengzhuang((*bit)->GetRect(), (*it)->GetRect()))
+				{
+					(*it)->Isdie();
+					delete (*bit);
+					bs.erase(bit);
+
+					kill++;
+
+					break;
+				}
+				bit++;
+			}
+			//敌机走出屏幕删除
+			if (!(*it)->Show())
+			{
+				delete (*it);
+				es.erase(it);
+				it = es.begin();
+			}
+			it++;
+		}
+		for (int i = 0; i < 5 - es.size(); i++)
+		{
+			AddEnemy(es, enemyimg, eboom);
+		}
+
+		if (kill >= 50&&hp.hping>0) {
+			hp.hp0();
+			MessageBox(GetHWnd(), _T("击杀数达到50，挑战成功"), _T("游戏结束"), MB_OK);
+
+			return true;
+		}
+
+		EndBatchDraw();
+	}
+	printf_s("e");
+	MessageBox(GetHWnd(), _T("击杀数未达50，挑战失败"), _T("游戏结束"), MB_OK);
+	return true;
+}
+
+bool Play2() {
+	setbkcolor(WHITE);
+	cleardevice();
+	bool xxx = true;
+
+	IMAGE heroimg, enemyimg, bkimg, bulletimg,ebulletimg;
+	IMAGE eboom[3];
+
+	loadimage(&heroimg, _T("D:\\visualstudio\\project\\C++work\\images\\换色带枪.png"));
+	loadimage(&enemyimg, _T("D:\\visualstudio\\project\\C++work\\images\\黄蟹大.png"));
+	loadimage(&bkimg, _T("D:\\visualstudio\\project\\C++work\\images\\地图2.png"), swidth, sheight * 2);
+	loadimage(&bulletimg, _T("D:\\visualstudio\\project\\C++work\\images\\蓝色子弹11.png"));
+	loadimage(&ebulletimg, _T("D:\\visualstudio\\project\\C++work\\images\\红色子弹.png"));
+	loadimage(&eboom[0], _T("D:\\visualstudio\\project\\C++work\\images\\黄蟹爆炸1.png"));
+	loadimage(&eboom[1], _T("D:\\visualstudio\\project\\C++work\\images\\黄蟹爆炸2.png"));
+	loadimage(&eboom[2], _T("D:\\visualstudio\\project\\C++work\\images\\黄蟹爆炸3.png"));
+
+	BK bk = BK(bkimg);
+	Hero hp = Hero(heroimg);
+
+	vector<Enemy*> es;
+	vector<Bullet*> bs;
+	vector<EBullet*> ebs;
+	int bsing = 0;
+
+	clock_t hurtlast = clock();
+
+	unsigned long long kill = 0;
+
+	for (int i = 0; i < 5; i++)
+	{
+		AddEnemy(es, enemyimg, eboom);
+	}
+
+	while (xxx)
+	{
+		bsing++;
+		if (bsing % 10 == 0)
+		{
+			bs.push_back(new Bullet(bulletimg, hp.GetRect()));
+		}
+		if (bsing == 40)
+		{
+			bsing = 0;
+			for (auto& i : es)
+			{
+				ebs.push_back(new EBullet(ebulletimg, i->GetRect()));
+			}
+		}
+
+		BeginBatchDraw();
+
+		bk.Show();
+		Sleep(2);
+		flushmessage();
+		Sleep(2);
+		hp.Control();
+
+		if (_kbhit())
+		{
+			char v = _getch();
+			if (v == 0x20)
+			{
+				Sleep(500);
+				while (true)
+				{
+					if (_kbhit())
+					{
+						v = _getch();
+						if (v == 0x20)
+						{
+							break;
+						}
+					}
+					Sleep(16);
+				}
+			}
+		}
+		hp.Show();
+
+		auto bsit = bs.begin();
+		while (bsit != bs.end())
+		{
+			if (!(*bsit)->Show())
+			{
+				bsit = bs.erase(bsit);
+			}
+			else
+			{
+				bsit++;
+			}
+		}
+
+		auto ebsit = ebs.begin();
+		while (ebsit != ebs.end())
+		{
+			if (!(*ebsit)->Show())
+			{
+				ebsit = ebs.erase(ebsit);
+			}
+			else
+			{
+				if (pengzhuang((*ebsit)->GetRect(), hp.GetRect()))
+				{
+					if (clock() - hurtlast >= hurttime)
+					{
+						xxx = hp.hurt();
+						hurtlast = clock();
+					}
+				}
+				ebsit++;
+			}
+
+		}
+
+		auto it = es.begin();
+		while (it != es.end())
+		{
+			if (pengzhuang((*it)->GetRect(), hp.GetRect()))
+			{
+				if (clock() - hurtlast >= hurttime)
+				{
+					xxx = hp.hurt();
+					hurtlast = clock();
+				}
+			}
+			auto bit = bs.begin();
+			while (bit != bs.end())
+			{
+				if (pengzhuang((*bit)->GetRect(), (*it)->GetRect()))
+				{
+					(*it)->Isdie();
+					delete (*bit);
+					bs.erase(bit);
+
+					kill++;
+
+					break;
+				}
+				bit++;
+			}
+			//敌机走出屏幕删除
+			if (!(*it)->Show())
+			{
+				delete (*it);
+				es.erase(it);
+				it = es.begin();
+			}
+			it++;
+		}
+		for (int i = 0; i < 5 - es.size(); i++)
+		{
+			AddEnemy(es, enemyimg, eboom);
+		}
+
+		EndBatchDraw();
+	}
+	printf_s("e");
+
+	Over(kill);
+
+	return true;
+}
+
+int main()
+{
+	initgraph(swidth, sheight, EW_NOMINIMIZE | EW_SHOWCONSOLE);
+	bool x = true;
+	while (x)
+	{
+		switch (kaishi()) {
+		case 1:Play1();
+			break;
+		case 2:Play2();
+			break;
+		case 0:
+			break;
+		}
+		
+	}
+
+	return 0;
+}
